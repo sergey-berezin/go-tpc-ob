@@ -15,6 +15,7 @@ const (
 	tableHistory   = "history"
 	tableWareHouse = "warehouse"
 	tableStock     = "stock"
+	tableGroupName = "gotpcc_group"
 )
 
 type ddlManager struct {
@@ -54,6 +55,10 @@ func (w *ddlManager) createForeignKeyDDL(ctx context.Context, query string, inde
 		return err
 	}
 	return nil
+}
+
+func (w *ddlManager) appendTableGroup(query string) string {
+	return fmt.Sprintf("%s\nTABLEGROUP='%s'", query, tableGroupName)
 }
 
 func (w *ddlManager) appendPartition(query string, partKeys string) string {
@@ -132,8 +137,16 @@ func (w *ddlManager) createTables(ctx context.Context, driver string) error {
 			clusteredIndexType = "NONCLUSTERED"
 		}
 
+		// Table group
+		query := fmt.Sprintf("CREATE TABLEGROUP %s SHARDING='PARTITION'", tableGroupName)
+		s := getTPCCState(ctx)
+		fmt.Printf("creating table group %s\n", tableGroupName)
+		if _, err := s.Conn.ExecContext(ctx, query); err != nil {
+			return err
+		}
+
 		// Warehouse
-		query := fmt.Sprintf(`
+		query = fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS warehouse (
 	w_id INT NOT NULL,
 	w_name VARCHAR(10),
@@ -147,6 +160,7 @@ CREATE TABLE IF NOT EXISTS warehouse (
 	PRIMARY KEY (w_id) /*T![clustered_index] %s */
 )`, clusteredIndexType)
 
+		query = w.appendTableGroup(query)
 		query = w.appendPartition(query, "w_id")
 
 		if err := w.createTableDDL(ctx, query, tableWareHouse); err != nil {
@@ -170,6 +184,7 @@ CREATE TABLE IF NOT EXISTS district (
 	PRIMARY KEY (d_w_id, d_id) /*T![clustered_index] %s */
 )`, clusteredIndexType)
 
+		query = w.appendTableGroup(query)
 		query = w.appendPartition(query, "d_w_id")
 
 		if err := w.createTableDDL(ctx, query, tableDistrict); err != nil {
@@ -204,6 +219,7 @@ CREATE TABLE IF NOT EXISTS customer (
 	INDEX idx_customer (c_w_id, c_d_id, c_last, c_first)
 )`, clusteredIndexType)
 
+		query = w.appendTableGroup(query)
 		query = w.appendPartition(query, "c_w_id")
 
 		if err := w.createTableDDL(ctx, query, tableCustomer); err != nil {
@@ -224,6 +240,7 @@ CREATE TABLE IF NOT EXISTS history (
 	INDEX idx_h_c_w_id (h_c_w_id)
 )`
 
+		query = w.appendTableGroup(query)
 		query = w.appendPartition(query, "h_w_id")
 
 		if err := w.createTableDDL(ctx, query, tableHistory); err != nil {
@@ -238,6 +255,7 @@ CREATE TABLE IF NOT EXISTS new_order (
 	PRIMARY KEY(no_w_id, no_d_id, no_o_id) /*T![clustered_index] %s */
 )`, clusteredIndexType)
 
+		query = w.appendTableGroup(query)
 		query = w.appendPartition(query, "no_w_id")
 		if err := w.createTableDDL(ctx, query, tableNewOrder); err != nil {
 			return err
@@ -258,6 +276,7 @@ CREATE TABLE IF NOT EXISTS orders (
 	INDEX idx_order (o_w_id, o_d_id, o_c_id, o_id)
 )`, clusteredIndexType)
 
+		query = w.appendTableGroup(query)
 		query = w.appendPartition(query, "o_w_id")
 		if err := w.createTableDDL(ctx, query, tableOrders); err != nil {
 			return err
@@ -278,6 +297,7 @@ CREATE TABLE IF NOT EXISTS orders (
 		PRIMARY KEY(ol_w_id, ol_d_id, ol_o_id, ol_number) /*T![clustered_index] %s */
 )`, clusteredIndexType)
 
+		query = w.appendTableGroup(query)
 		query = w.appendPartition(query, "ol_w_id")
 		if err := w.createTableDDL(ctx, query, tableOrderLine); err != nil {
 			return err
@@ -305,6 +325,7 @@ CREATE TABLE IF NOT EXISTS stock (
 	PRIMARY KEY(s_w_id, s_i_id) /*T![clustered_index] %s */
 )`, clusteredIndexType)
 
+		query = w.appendTableGroup(query)
 		query = w.appendPartition(query, "s_w_id")
 		if err := w.createTableDDL(ctx, query, tableStock); err != nil {
 			return err
@@ -699,6 +720,11 @@ func (w *ddlManager) dropTable(ctx context.Context) error {
 		if _, err := s.Conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", tbl)); err != nil {
 			return err
 		}
+	}
+
+	fmt.Printf("DROP TABLEGROUP IF EXISTS %s\n", tableGroupName)
+	if _, err := s.Conn.ExecContext(ctx, fmt.Sprintf("DROP TABLEGROUP IF EXISTS %s", tableGroupName)); err != nil {
+		return err
 	}
 
 	return nil
