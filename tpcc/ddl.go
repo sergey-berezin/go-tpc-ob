@@ -15,7 +15,7 @@ const (
 	tableHistory   = "history"
 	tableWareHouse = "warehouse"
 	tableStock     = "stock"
-	tableGroupName = "gotpcc_group"
+	tableGroupName = "tpcc_group"
 )
 
 type ddlManager struct {
@@ -339,7 +339,7 @@ CREATE TABLE IF NOT EXISTS item (
 	i_price DECIMAL(5, 2),
 	i_data VARCHAR(50),
 	PRIMARY KEY(i_id) /*T![clustered_index] %s */
-)`, clusteredIndexType)
+) DUPLICATE_SCOPE='cluster'`, clusteredIndexType)
 
 		if err := w.createTableDDL(ctx, query, tableItem); err != nil {
 			return err
